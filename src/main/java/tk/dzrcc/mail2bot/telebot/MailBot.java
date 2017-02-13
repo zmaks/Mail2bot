@@ -40,9 +40,9 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
         if(!text.equals(Commands.STRAT)){
             String[] parts = text.split(" ");
             if (parts.length == 2) {
-                MailService ms = getMSbyChatId(chatId);
-                ms.setUsername(parts[0]);
-                ms.setPassword(parts[1]);
+                MailService ms = addMailService(chatId, parts[0], parts[1]);
+                //ms.setUsername(parts[0]);
+                //ms.setPassword(parts[1]);
                 try {
                     ms.connect();
                 } catch (MessagingException e) {
@@ -65,18 +65,20 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
         }
     }
 
-    private MailService getMSbyChatId(Long chatId){
-        if (!serviceMap.containsKey(chatId)){
-            MailService ms = new MailService();
-            ms.setBot(this);
-            serviceMap.put(chatId, ms);
-            return ms;
-        } else {
-            return serviceMap.get(chatId);
+    private MailService addMailService(Long chatId, String username, String pass){
+        MailService ms = new MailService();
+        ms.setUsername(username);
+        ms.setPassword(pass);
+        ms.setOwnerChatId(chatId);
+        ms.setBot(this);
+        if(serviceMap.containsKey(chatId)){
+            serviceMap.get(chatId).stop();
         }
+        serviceMap.put(chatId, ms);
+        return ms;
     }
 
-    public void performMessage(String name, InputStream image, Long chatId) {
+    public synchronized void sendToTelegram(String name, InputStream image, Long chatId) {
         try {
             sendPhoto(new SendPhoto().setNewPhoto(name, image).setChatId(chatId));
         } catch (TelegramApiException e) {

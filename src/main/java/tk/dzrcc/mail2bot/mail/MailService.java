@@ -3,11 +3,11 @@ package tk.dzrcc.mail2bot.mail;
 import tk.dzrcc.mail2bot.Utils;
 
 import javax.mail.*;
-import javax.mail.event.MessageCountEvent;
-import javax.mail.event.MessageCountListener;
 import javax.mail.internet.MimeBodyPart;
 import java.io.IOException;
+import java.util.Date;
 import java.util.Properties;
+import java.util.Random;
 
 /**
  * Created by Maksim on 12.02.2017.
@@ -19,8 +19,10 @@ public class MailService {
     private static final String PROVIDER = "imap";
     private Long ownerChatId;
     private Properties props;
+    private Date lastMessageDate;
 
     private MessageListener bot;
+    private Thread mailUpdateThread;
 
     private Store store;
     private Folder inbox;
@@ -48,80 +50,106 @@ public class MailService {
         store = session.getStore(PROVIDER);
         store.connect(host, username, password);
         if (store.isConnected()){
-            openFolder();
+            startMailUpdate();
         }
     }
 
-    private void openFolder() throws MessagingException {
+    private void reopenFolder() throws MessagingException {
+        if (inbox.isOpen()) inbox.close(false);
         inbox = store.getFolder("INBOX");
         inbox.open(Folder.READ_ONLY);
-        messagesCount = inbox.getMessageCount();
-        System.out.println("1st count:"+messagesCount);
-        Thread mailUpdate = new Thread(new MailUpdate());
-        inbox.close(false);
-        inbox = store.getFolder("INBOX");
-        inbox.open(Folder.READ_ONLY);
-        mailUpdate.start();
-        /*inbox.addMessageCountListener(new MessageCountListener() {
-            public void messagesAdded(MessageCountEvent messageCountEvent) {
-                try {
-                    Message[] messages = messageCountEvent.getMessages();
-                    for (Message message : messages) {
-                        String contentType = message.getContentType();
-                        if (contentType.contains("multipart")) {
-                            Multipart multiPart = (Multipart) message.getContent();
-                            int numberOfParts = multiPart.getCount();
-                            for (int partCount = 0; partCount < numberOfParts; partCount++) {
-                                MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
-                                if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
-                                        && Utils.isImage(part.getFileName())) {
-                                    bot.performMessage(part.getFileName(), part.getInputStream(), ownerChatId);
-                                }
-                            }
-                        }
-                    }
-                } catch (MessagingException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            public void messagesRemoved(MessageCountEvent messageCountEvent) {
-
-            }
-        });*/
     }
 
-    class MailUpdate implements Runnable {
+    private void startMailUpdate() throws MessagingException {
+        inbox = store.getFolder("INBOX");
+        inbox.open(Folder.READ_ONLY);
+
+        mailUpdateThread = new Thread(new MailUpdate());
+        mailUpdateThread.setName("Updater thread " + new Random().nextInt(1000));
+        mailUpdateThread.start();
+    }
+
+
+    private void performNewMails(Folder inbox, int oldMessagesCount, int newMessageCount) throws MessagingException, IOException {
+        Message[] messages = inbox.getMessages(oldMessagesCount + 1, newMessageCount);
+        for(Message message : messages) {
+            parseMessage(message);
+        }
+    }
+
+
+    private void performNewMailsWithDeleted(Folder inbox, int newMessageCount) throws MessagingException, IOException {
+        int i = 1;
+        Message message = inbox.getMessage(newMessageCount - i);
+        Date lastDate = lastMessageDate;
+        while (lastDate.compareTo(message.getReceivedDate()) < 0) {
+            parseMessage(message);
+            i++;
+            message = inbox.getMessage(newMessageCount - i);
+        }
+    }
+
+    private void parseMessage(Message message) throws MessagingException, IOException {
+        String contentType = message.getContentType();
+        if (contentType.contains("multipart")) {
+            Multipart multiPart = (Multipart) message.getContent();
+            int numberOfParts = multiPart.getCount();
+            for (int partCount = 0; partCount < numberOfParts; partCount++) {
+                MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
+                if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
+                        && Utils.isImage(part.getFileName())) {
+                    bot.sendToTelegram(part.getFileName(), part.getInputStream(), ownerChatId);
+                    lastMessageDate = message.getReceivedDate();
+                }
+            }
+        }
+    }
+
+    private class MailUpdate implements Runnable {
         public void run() {
-            while (true){
-                System.out.println(".");
-                try {
+            int i = 0;
+            try {
+                messagesCount = inbox.getMessageCount();
+                System.out.println("1st count:" + messagesCount);
+                while (true) {
+                    System.out.println(Thread.currentThread().getName() + " --- " + i);
+                    i++;
 
-
-                    Thread.sleep(5000L);
-                    int a = inbox.getMessageCount();
-                    int b = inbox.getDeletedMessageCount();
-                    System.out.println(a);
-                    System.out.println(b);
+                    reopenFolder();
+                    int newMessageCount = inbox.getMessageCount();
+                    if (newMessageCount > messagesCount) {
+                        performNewMails(inbox, messagesCount, newMessageCount);
+                    }
+                    if (newMessageCount < messagesCount) {
+                        performNewMailsWithDeleted(inbox, newMessageCount);
+                    }
+                    messagesCount = newMessageCount;
+                    System.out.println(newMessageCount);
                     inbox.close(false);
                     inbox = store.getFolder("INBOX");
                     inbox.open(Folder.READ_ONLY);
-                   /* if (a>0) {
-
-                        System.out.println(inbox.getMessage(inbox.getMessageCount()-1).getSubject());
-                        inbox.close(false);
-                        inbox = store.getFolder("INBOX");
-                        inbox.open(Folder.READ_ONLY);
-                    }*/
-                        //System.out.println("New");
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (MessagingException e) {
-                    e.printStackTrace();
+                    Thread.sleep(2000L);
                 }
+
+            } catch (MessagingException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
+
+        }
+    }
+
+    public void stop(){
+        mailUpdateThread.stop();
+
+        try {
+            inbox.close(false);
+            store.close();
+        } catch (MessagingException e) {
+            e.printStackTrace();
         }
     }
 
