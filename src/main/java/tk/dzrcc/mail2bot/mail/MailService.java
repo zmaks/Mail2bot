@@ -115,8 +115,9 @@ public class MailService {
             int numberOfParts = multiPart.getCount();
             for (int partCount = 0; partCount < numberOfParts; partCount++) {
                 MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
+                //System.out.println(part.getContentType());
                 if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
-                        && part.getContentType().contains("image")) {
+                        && part.getContentType().toLowerCase().contains("image")) {
                         //&& Utils.isImage(part.getFileName())) {
                     System.out.println("Image name: " + part.getFileName());
                     bot.sendToTelegram(part.getFileName(), part.getInputStream(), ownerChatId);
