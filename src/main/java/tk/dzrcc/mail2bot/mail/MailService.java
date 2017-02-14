@@ -143,11 +143,14 @@ public class MailService {
     }
 
     public void stop(){
-        mailUpdateThread.stop();
+        if(mailUpdateThread != null && mailUpdateThread.isAlive())
+            mailUpdateThread.stop();
 
         try {
-            inbox.close(false);
-            store.close();
+            if (inbox != null && store != null && inbox.isOpen() && store.isConnected()) {
+                inbox.close(false);
+                store.close();
+            }
         } catch (MessagingException e) {
             e.printStackTrace();
         }
