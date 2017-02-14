@@ -9,6 +9,7 @@ import tk.dzrcc.mail2bot.mail.MailService;
 import tk.dzrcc.mail2bot.mail.MessageListener;
 
 import javax.mail.MessagingException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
@@ -57,29 +58,34 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
             performStartCommand(chatId);
             return;
         }
+        if (text.equals(Commands.RESTART)) {
+            performStopCommand(chatId, true);
+            performStartCommand(chatId);
+            return;
+        }
         if (text.equals(Commands.STOP)){
-            performStopCommand(chatId);
+            performStopCommand(chatId, false);
             return;
         }
         if (serviceMap.containsKey(chatId) && serviceMap.get(chatId) == null) {
             performConnection(chatId, text);
             return;
         }
-
     }
 
-    private void performStopCommand(Long chatId) throws TelegramApiException {
+    private void performStopCommand(Long chatId, boolean isRestart) throws TelegramApiException {
         String message = "";
         if (serviceMap.containsKey(chatId) && serviceMap.get(chatId) != null) {
             serviceMap.get(chatId).stop();
             serviceMap.remove(chatId);
-            message = "Пересылка картинок остановлена. Для возобновления работы воспользуйтесь командой /start";
+            message = "Пересылка картинок остановлена. Для возобновления работы воспользуйтесь командой /start.";
         } else
             message = "Сервис еще не запущен, останавливать нечего. Воспользуйтесь командой /start :)";
-        sendMessage(new SendMessage()
-                .setChatId(chatId)
-                .setText(message)
-        );
+        if (!isRestart)
+            sendMessage(new SendMessage()
+                    .setChatId(chatId)
+                    .setText(message)
+            );
     }
 
     private void performStartCommand(Long chatId) throws TelegramApiException {
@@ -142,6 +148,19 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
     public synchronized void sendToTelegram(String name, InputStream image, Long chatId) {
         try {
             sendPhoto(new SendPhoto().setNewPhoto(name, image).setChatId(chatId));
+            image.close();
+        } catch (TelegramApiException | IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void sendToTelegram(String text, Long chatId) {
+        try {
+            sendMessage(new SendMessage()
+                    .setChatId(chatId)
+                    .setText(text)
+            );
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }

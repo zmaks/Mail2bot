@@ -6,4 +6,5 @@ package tk.dzrcc.mail2bot.telebot;
 public interface Commands {
     String START = "/start";
     String STOP = "/stop";
+    String RESTART = "/restart";
 }

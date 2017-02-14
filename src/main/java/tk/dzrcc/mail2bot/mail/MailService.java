@@ -13,7 +13,7 @@ import java.util.Random;
  * Created by Maksim on 12.02.2017.
  */
 public class MailService {
-    private String host = "imap.yandex.ru";
+    private String host;
     private String username;
     private String password;
     private static final String PROVIDER = "imap";
@@ -39,19 +39,33 @@ public class MailService {
         props.put("mail.imap.socketFactory.port", "993");
         props.put("mail.imap.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
         props.put("mail.imap.socketFactory.fallback", "false");
+        /*props.setProperty("mail.pop3.starttls.enable", "true");
+        props.put("mail.pop3.auth", "true");
+        props.put("mail.pop3.socketFactory.port", "995");
+        props.put("mail.pop3.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+        props.put("mail.pop3.socketFactory.fallback", "false");*/
     }
 
     public void connect() throws MessagingException {
-        Utils.checkParam(host, "хост");
+        //Utils.checkParam(host, "хост");
         Utils.checkParam(username, "email");
         Utils.checkParam(password, "пароль");
-
+        host = username2host(username);
         Session session = Session.getDefaultInstance(props, null);
         store = session.getStore(PROVIDER);
         store.connect(host, username, password);
         if (store.isConnected()){
             startMailUpdate();
         }
+    }
+
+    private String username2host(String username){
+        String mail = username.split("@")[1];
+        if (mail.equals("ya.ru")) mail = "yandex.ru";
+        if (mail.equals("inbox.ru")) mail = "mail.ru";
+        if (mail.equals("bk.ru")) mail = "mail.ru";
+        if (mail.equals("list.ru")) mail = "mail.ru";
+        return "imap." + mail;
     }
 
     private void reopenFolder() throws MessagingException {
@@ -65,20 +79,25 @@ public class MailService {
         inbox.open(Folder.READ_ONLY);
 
         mailUpdateThread = new Thread(new MailUpdate());
-        mailUpdateThread.setName("Updater thread " + new Random().nextInt(1000));
+        mailUpdateThread.setName("Updater thread " + ownerChatId);
         mailUpdateThread.start();
     }
 
 
-    private void performNewMails(Folder inbox, int oldMessagesCount, int newMessageCount) throws MessagingException, IOException {
+    private synchronized void performNewMails(Folder inbox, int oldMessagesCount, int newMessageCount) throws MessagingException, IOException {
         Message[] messages = inbox.getMessages(oldMessagesCount + 1, newMessageCount);
+
+        //Message[] messages = inbox.getMessages(1, newMessageCount - oldMessagesCount+1);
         for(Message message : messages) {
-            parseMessage(message);
+            if(message != null) {
+                System.out.println(message.getSubject());
+                parseMessage(message);
+            }
         }
     }
 
 
-    private void performNewMailsWithDeleted(Folder inbox, int newMessageCount) throws MessagingException, IOException {
+    private synchronized void performNewMailsWithDeleted(Folder inbox, int newMessageCount) throws MessagingException, IOException {
         int i = 1;
         Message message = inbox.getMessage(newMessageCount - i);
         Date lastDate = lastMessageDate;
@@ -97,8 +116,11 @@ public class MailService {
             for (int partCount = 0; partCount < numberOfParts; partCount++) {
                 MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
                 if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
-                        && Utils.isImage(part.getFileName())) {
+                        && part.getContentType().contains("image")) {
+                        //&& Utils.isImage(part.getFileName())) {
+                    System.out.println("Image name: " + part.getFileName());
                     bot.sendToTelegram(part.getFileName(), part.getInputStream(), ownerChatId);
+                    //bot.sendToTelegram("image."+part.getContentType().split("/")[1], part.getInputStream(), ownerChatId);
                     lastMessageDate = message.getReceivedDate();
                 }
             }
@@ -128,14 +150,11 @@ public class MailService {
                     inbox.close(false);
                     inbox = store.getFolder("INBOX");
                     inbox.open(Folder.READ_ONLY);
-                    Thread.sleep(2000L);
+                    Thread.sleep(5000L);
                 }
 
-            } catch (MessagingException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
+            } catch (MessagingException | IOException | InterruptedException e) {
+                bot.sendToTelegram("Ошибка при обновлении списка писем на почте. Возможно, сменен пароль почты. Попробуйте подключиться позже с помощью команды /restart.", ownerChatId);
                 e.printStackTrace();
             }
 
@@ -147,8 +166,10 @@ public class MailService {
             mailUpdateThread.stop();
 
         try {
-            if (inbox != null && store != null && inbox.isOpen() && store.isConnected()) {
+            if (inbox != null && inbox.isOpen()) {
                 inbox.close(false);
+            }
+            if (store != null && store.isConnected()) {
                 store.close();
             }
         } catch (MessagingException e) {

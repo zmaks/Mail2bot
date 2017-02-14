@@ -7,4 +7,5 @@ import java.io.InputStream;
  */
 public interface MessageListener {
     void sendToTelegram(String name, InputStream image, Long chatId);
+    void sendToTelegram(String text, Long chatId);
 }
