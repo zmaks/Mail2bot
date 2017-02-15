@@ -7,7 +7,6 @@ import javax.mail.internet.MimeBodyPart;
 import java.io.IOException;
 import java.util.Date;
 import java.util.Properties;
-import java.util.Random;
 
 /**
  * Created by Maksim on 12.02.2017.
@@ -16,7 +15,6 @@ public class MailService {
     private String host;
     private String username;
     private String password;
-    private static final String PROVIDER = "imap";
     private Long ownerChatId;
     private Properties props;
     private Date lastMessageDate;
@@ -27,23 +25,18 @@ public class MailService {
     private Store store;
     private Folder inbox;
 
+    private static final Long FREQUENCY = 10000L;
     private int messagesCount = -1;
 
+    private static final String PROVIDER = "imap";
+
     public MailService() {
-        /*this.host = host;
-        this.username = username;
-        this.password = password;*/
         props = new Properties();
         props.setProperty("mail.imap.starttls.enable", "true");
         props.put("mail.imap.auth", "true");
         props.put("mail.imap.socketFactory.port", "993");
         props.put("mail.imap.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
         props.put("mail.imap.socketFactory.fallback", "false");
-        /*props.setProperty("mail.pop3.starttls.enable", "true");
-        props.put("mail.pop3.auth", "true");
-        props.put("mail.pop3.socketFactory.port", "995");
-        props.put("mail.pop3.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
-        props.put("mail.pop3.socketFactory.fallback", "false");*/
     }
 
     public void connect() throws MessagingException {
@@ -87,7 +80,6 @@ public class MailService {
     private synchronized void performNewMails(Folder inbox, int oldMessagesCount, int newMessageCount) throws MessagingException, IOException {
         Message[] messages = inbox.getMessages(oldMessagesCount + 1, newMessageCount);
 
-        //Message[] messages = inbox.getMessages(1, newMessageCount - oldMessagesCount+1);
         for(Message message : messages) {
             if(message != null) {
                 System.out.println(message.getSubject());
@@ -115,13 +107,13 @@ public class MailService {
             int numberOfParts = multiPart.getCount();
             for (int partCount = 0; partCount < numberOfParts; partCount++) {
                 MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
-                //System.out.println(part.getContentType());
+
+
                 if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
                         && part.getContentType().toLowerCase().contains("image")) {
                         //&& Utils.isImage(part.getFileName())) {
                     System.out.println("Image name: " + part.getFileName());
-                    bot.sendToTelegram(part.getFileName(), part.getInputStream(), ownerChatId);
-                    //bot.sendToTelegram("image."+part.getContentType().split("/")[1], part.getInputStream(), ownerChatId);
+                    bot.sendToTelegram("image.jpeg"/*part.getFileName()*/, part.getInputStream(), ownerChatId);
                     lastMessageDate = message.getReceivedDate();
                 }
             }
@@ -148,10 +140,7 @@ public class MailService {
                     }
                     messagesCount = newMessageCount;
                     System.out.println(newMessageCount);
-                    inbox.close(false);
-                    inbox = store.getFolder("INBOX");
-                    inbox.open(Folder.READ_ONLY);
-                    Thread.sleep(5000L);
+                    Thread.sleep(FREQUENCY);
                 }
 
             } catch (MessagingException | IOException | InterruptedException e) {

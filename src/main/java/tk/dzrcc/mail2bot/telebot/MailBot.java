@@ -19,8 +19,8 @@ import java.util.regex.Pattern;
  * Created by Maksim on 12.02.2017.
  */
 public class MailBot extends TelegramLongPollingBot implements MessageListener {
-    private static final String START_MESSAGE = "Привет! Чтобы подключтиься к Вашей почте и приступить к работе, мне необходимы адрес почты (пока доступна только Яндекс.Почта) и пароль через пробел. Например:\n\nivanov@ya.ru password123";
-    private static final String SERVICE_STARTED = "Вы уже запустили сервис :)";
+    private static final String START_MESSAGE = "Привет! Чтобы подключтиься к Вашей почте и приступить к работе, мне необходимы адрес почты (Яндекс.Почта или Gmail) и пароль через пробел. Например:\n\nivanov@ya.ru password123";
+    private static final String SERVICE_STARTED = "Работа уже идет полным ходом! :)";
     private Map<Long, MailService> serviceMap = new HashMap<Long, MailService>();
 
     private Pattern mailParamsPattern = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\s.{2,}$");
@@ -45,6 +45,12 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
 
     public void onUpdateReceived(Update update) {
         if (update.hasMessage() && update.getMessage().hasText()) {
+            System.out.println(update.getMessage().getFrom().getFirstName()+" "
+                    + update.getMessage().getFrom().getLastName()+ " "
+                    + update.getMessage().getFrom().getLastName()+ " id: "
+                    + update.getMessage().getFrom().getId()
+            );
+            System.out.println(update.getMessage().getText());
             try {
                 handleMessage(update.getMessage().getChatId(), update.getMessage().getText());
             } catch (TelegramApiException e) {
@@ -56,6 +62,7 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
     private void handleMessage(Long chatId, String text) throws TelegramApiException {
         if(text.equals(Commands.START)){
             performStartCommand(chatId);
+            System.out.println("Started " + chatId);
             return;
         }
         if (text.equals(Commands.RESTART)) {
@@ -104,12 +111,13 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
 
     private void performConnection(Long chatId, String text) throws TelegramApiException {
         String message = "";
-        if (mailParamsPattern.matcher(text).find()) {
+        String[] parts = text.split(" ");
+        if (mailParamsPattern.matcher(text).find() && parts.length == 2) {
             sendMessage(new SendMessage()
                             .setChatId(chatId)
                             .setText("Подключаюсь...")
             );
-            String[] parts = text.split(" ");
+
             MailService ms;
             try {
                 ms = addMailService(chatId, parts[0], parts[1]);
@@ -121,9 +129,9 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
                 );
                 return;
             }
-            message = "Готово! Теперь все фотографии, приходящие на Вашу почты будут пересылаться в этот диалог.\nЧтобы остановить процесс, отправьте команду /stop. \n\nВнимание! Советую удалить Ваше сообщение с паролем от почты, чтобы его никто не узнал.";
+            message = "Готово! Теперь все фотографии, приходящие на Вашу почты будут пересылаться в этот диалог.\nЧтобы остановить процесс, отправьте команду /stop.";
         } else {
-            message = "Вы еще не ввели адрес почты и пароль. Или же ввели неправильно. Пришлите, пожалуйста, правильныные адрес почты и пароль через пробел. Например:\n\n ivanov@ya.ru password123";
+            message = "Адрес почты и пароль введены неправильно. Пришлите, пожалуйста, правильныные адрес почты и пароль через пробел. Например:\n\n ivanov@ya.ru password123";
         }
         sendMessage(new SendMessage()
                 .setChatId(chatId)
