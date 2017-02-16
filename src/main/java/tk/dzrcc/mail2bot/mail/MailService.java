@@ -1,10 +1,12 @@
 package tk.dzrcc.mail2bot.mail;
 
+import org.apache.log4j.Logger;
 import tk.dzrcc.mail2bot.Utils;
 
 import javax.mail.*;
 import javax.mail.internet.MimeBodyPart;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Date;
 import java.util.Properties;
 
@@ -12,6 +14,8 @@ import java.util.Properties;
  * Created by Maksim on 12.02.2017.
  */
 public class MailService {
+    final static Logger LOGGER = Logger.getLogger(MailService.class);
+
     private String host;
     private String username;
     private String password;
@@ -44,6 +48,7 @@ public class MailService {
         Utils.checkParam(username, "email");
         Utils.checkParam(password, "пароль");
         host = username2host(username);
+        LOGGER.info("Host:" + host);
         Session session = Session.getDefaultInstance(props, null);
         store = session.getStore(PROVIDER);
         store.connect(host, username, password);
@@ -72,22 +77,21 @@ public class MailService {
         inbox.open(Folder.READ_ONLY);
 
         mailUpdateThread = new Thread(new MailUpdate());
-        mailUpdateThread.setName("Updater thread " + ownerChatId);
+        mailUpdateThread.setName("UT" + ownerChatId);
         mailUpdateThread.start();
+        LOGGER.info("Thread " + mailUpdateThread.getName() + " started");
+        System.out.println("Thread " + mailUpdateThread.getName() + " started");
     }
-
 
     private synchronized void performNewMails(Folder inbox, int oldMessagesCount, int newMessageCount) throws MessagingException, IOException {
         Message[] messages = inbox.getMessages(oldMessagesCount + 1, newMessageCount);
 
         for(Message message : messages) {
             if(message != null) {
-                System.out.println(message.getSubject());
                 parseMessage(message);
             }
         }
     }
-
 
     private synchronized void performNewMailsWithDeleted(Folder inbox, int newMessageCount) throws MessagingException, IOException {
         int i = 1;
@@ -101,19 +105,33 @@ public class MailService {
     }
 
     private void parseMessage(Message message) throws MessagingException, IOException {
-        String contentType = message.getContentType();
-        if (contentType.contains("multipart")) {
+        String contentType = "";
+        try {
+            contentType = message.getContentType();
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+            return;
+        }
+        //System.out.println(contentType);
+        if (contentType.toLowerCase().contains("multipart")) {
             Multipart multiPart = (Multipart) message.getContent();
             int numberOfParts = multiPart.getCount();
+
             for (int partCount = 0; partCount < numberOfParts; partCount++) {
                 MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
+                System.out.println("Part "+partCount+1+" disposition: " + part.getDisposition());
+                System.out.println("Part "+partCount+1+" content type: " + part.getContentType());
 
-
-                if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())
-                        && part.getContentType().toLowerCase().contains("image")) {
-                        //&& Utils.isImage(part.getFileName())) {
-                    System.out.println("Image name: " + part.getFileName());
-                    bot.sendToTelegram("image.jpeg"/*part.getFileName()*/, part.getInputStream(), ownerChatId);
+                if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())){
+                    InputStream inputStream = part.getInputStream();
+                    if (inputStream == null) {
+                        //System.out.println("INPUT STREAM IS NULL");
+                        LOGGER.info("InputStream is NULL");
+                    }
+                    else {
+                        LOGGER.info("Sending image to bot");
+                        bot.sendToTelegram("image.jpeg", inputStream, ownerChatId);
+                    }
                     lastMessageDate = message.getReceivedDate();
                 }
             }
@@ -125,13 +143,14 @@ public class MailService {
             int i = 0;
             try {
                 messagesCount = inbox.getMessageCount();
-                System.out.println("1st count:" + messagesCount);
+                LOGGER.info("Message count: " + messagesCount);
+                //System.out.println("1st count:" + messagesCount);
                 while (true) {
-                    System.out.println(Thread.currentThread().getName() + " --- " + i);
-                    i++;
+
 
                     reopenFolder();
                     int newMessageCount = inbox.getMessageCount();
+                    LOGGER.info("Thread.currentThread().getName() "+i+" ------------------------ " + messagesCount);
                     if (newMessageCount > messagesCount) {
                         performNewMails(inbox, messagesCount, newMessageCount);
                     }
@@ -139,30 +158,53 @@ public class MailService {
                         performNewMailsWithDeleted(inbox, newMessageCount);
                     }
                     messagesCount = newMessageCount;
-                    System.out.println(newMessageCount);
+                    i++;
                     Thread.sleep(FREQUENCY);
                 }
 
             } catch (MessagingException | IOException | InterruptedException e) {
-                bot.sendToTelegram("Ошибка при обновлении списка писем на почте. Возможно, сменен пароль почты. Попробуйте подключиться позже с помощью команды /restart.", ownerChatId);
+                LOGGER.error("Updating mails error in [" + Thread.currentThread().getName() + "]", e);
                 e.printStackTrace();
             }
 
         }
     }
 
+    private void reconnect(int messagesCount){
+        bot.sendToTelegram("Ошибка при обновлении списка писем на почте.\nПопытаюсь переподключиться через 20 секунд...", ownerChatId);
+        stop();
+        inbox = null;
+        store = null;
+        try {
+            Thread.sleep(20000L);
+            connect();
+        } catch (MessagingException | InterruptedException e) {
+            LOGGER.error("\n\n\nTOTAL FAIL\n\nReconnection error!", e);
+            bot.sendToTelegram("Увы, переподключиться не удалось. Возможно, сменен пароль почты. Попробуйте подключиться позже с помощью команды /restart.", ownerChatId);
+            bot.sendToAdmin("Ошибка обновления у пользователя " + ownerChatId);
+            e.printStackTrace();
+            return;
+        }
+        bot.sendToTelegram("Переподключение прошло успешно! Продолжаю работу.", ownerChatId);
+    }
+
     public void stop(){
-        if(mailUpdateThread != null && mailUpdateThread.isAlive())
+        if(mailUpdateThread != null && mailUpdateThread.isAlive()) {
             mailUpdateThread.stop();
+            LOGGER.info(mailUpdateThread.getName() + " stopped");
+        }
 
         try {
             if (inbox != null && inbox.isOpen()) {
                 inbox.close(false);
+                LOGGER.info("Inbox closed");
             }
             if (store != null && store.isConnected()) {
                 store.close();
+                LOGGER.info("Store closed");
             }
         } catch (MessagingException e) {
+            LOGGER.error("Stop thread error " + e);
             e.printStackTrace();
         }
     }

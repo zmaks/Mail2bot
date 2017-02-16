@@ -7,4 +7,5 @@ public interface Commands {
     String START = "/start";
     String STOP = "/stop";
     String RESTART = "/restart";
+    String SEND = "/send";
 }
