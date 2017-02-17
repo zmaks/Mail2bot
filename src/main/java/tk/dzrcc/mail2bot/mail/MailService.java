@@ -119,8 +119,8 @@ public class MailService {
 
             for (int partCount = 0; partCount < numberOfParts; partCount++) {
                 MimeBodyPart part = (MimeBodyPart) multiPart.getBodyPart(partCount);
-                System.out.println("Part "+partCount+1+" disposition: " + part.getDisposition());
-                System.out.println("Part "+partCount+1+" content type: " + part.getContentType());
+                LOGGER.info("Part "+(partCount+1)+" disposition: " + part.getDisposition());
+                LOGGER.info("Part "+(partCount+1)+" content type: " + part.getContentType());
 
                 if (Part.ATTACHMENT.equalsIgnoreCase(part.getDisposition())){
                     InputStream inputStream = part.getInputStream();
@@ -150,7 +150,7 @@ public class MailService {
 
                     reopenFolder();
                     int newMessageCount = inbox.getMessageCount();
-                    LOGGER.info("Thread.currentThread().getName() "+i+" ------------------------ " + messagesCount);
+                    LOGGER.info(Thread.currentThread().getName()+" " +i+" ------------------------ " + messagesCount);
                     if (newMessageCount > messagesCount) {
                         performNewMails(inbox, messagesCount, newMessageCount);
                     }
@@ -164,23 +164,25 @@ public class MailService {
 
             } catch (MessagingException | IOException | InterruptedException e) {
                 LOGGER.error("Updating mails error in [" + Thread.currentThread().getName() + "]", e);
+                reconnect();
                 e.printStackTrace();
             }
 
         }
     }
 
-    private void reconnect(int messagesCount){
+    private void reconnect(){
         bot.sendToTelegram("Ошибка при обновлении списка писем на почте.\nПопытаюсь переподключиться через 20 секунд...", ownerChatId);
-        stop();
+        Thread currentThread = mailUpdateThread;
+        stop(true);
         inbox = null;
         store = null;
         try {
-            Thread.sleep(20000L);
+            Thread.sleep(30000L);
             connect();
         } catch (MessagingException | InterruptedException e) {
             LOGGER.error("\n\n\nTOTAL FAIL\n\nReconnection error!", e);
-            bot.sendToTelegram("Увы, переподключиться не удалось. Возможно, сменен пароль почты. Попробуйте подключиться позже с помощью команды /restart.", ownerChatId);
+            bot.sendToTelegram("Ошибка обновления почты, переподключиться не удалось. Возможно, сменен пароль почты. Попробуйте подключиться позже с помощью команды /restart.", ownerChatId);
             bot.sendToAdmin("Ошибка обновления у пользователя " + ownerChatId);
             e.printStackTrace();
             return;
@@ -188,8 +190,8 @@ public class MailService {
         bot.sendToTelegram("Переподключение прошло успешно! Продолжаю работу.", ownerChatId);
     }
 
-    public void stop(){
-        if(mailUpdateThread != null && mailUpdateThread.isAlive()) {
+    public void stop(boolean isReconnect){
+        if(mailUpdateThread != null && mailUpdateThread.isAlive() && !isReconnect) {
             mailUpdateThread.stop();
             LOGGER.info(mailUpdateThread.getName() + " stopped");
         }

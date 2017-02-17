@@ -3,7 +3,7 @@ package tk.dzrcc.mail2bot;
 import org.telegram.telegrambots.ApiContextInitializer;
 import org.telegram.telegrambots.TelegramBotsApi;
 import org.telegram.telegrambots.exceptions.TelegramApiException;
-import tk.dzrcc.mail2bot.telebot.MailBot;
+import tk.dzrcc.mail2bot.telebot.MailTeleBot;
 
 /**
  * Created by Maksim on 12.02.2017.
@@ -19,7 +19,7 @@ public class Main {
         TelegramBotsApi botsApi = new TelegramBotsApi();
 
         try {
-            botsApi.registerBot(new MailBot());
+            botsApi.registerBot(new MailTeleBot());
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }

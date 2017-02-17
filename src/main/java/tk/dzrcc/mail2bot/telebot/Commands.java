@@ -8,4 +8,5 @@ public interface Commands {
     String STOP = "/stop";
     String RESTART = "/restart";
     String SEND = "/send";
+    String ADMIN_STOP = "/stopuser";
 }

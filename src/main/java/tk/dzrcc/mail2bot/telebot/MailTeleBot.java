@@ -20,8 +20,8 @@ import java.util.regex.Pattern;
 /**
  * Created by Maksim on 12.02.2017.
  */
-public class MailBot extends TelegramLongPollingBot implements MessageListener {
-    final static Logger LOGGER = Logger.getLogger(MailBot.class);
+public class MailTeleBot extends TelegramLongPollingBot implements MessageListener {
+    final static Logger LOGGER = Logger.getLogger(MailTeleBot.class);
 
 
     private static final String START_MESSAGE = "Привет! Чтобы подключтиься к Вашей почте и приступить к работе, мне необходимы адрес почты (Яндекс.Почта или Gmail) и пароль через пробел. Например:\n\nivanov@ya.ru password123";
@@ -31,7 +31,7 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
 
     private Pattern mailParamsPattern = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\s.{2,}$");
 
-    public MailBot(){
+    public MailTeleBot(){
         super();
         Runtime.getRuntime().addShutdownHook(new Thread() {
             public void run() {
@@ -89,6 +89,9 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
         if (chatId.equals(ADMIN_CHAT_ID) && text.contains(Commands.SEND)) {
             performMessageByAdmin(text);
         }
+        if (chatId.equals(ADMIN_CHAT_ID) && text.contains(Commands.ADMIN_STOP)) {
+            performAdminStop(text);
+        }
         if(text.equals(Commands.START)){
             performStartCommand(chatId);
             //System.out.println("START");
@@ -113,6 +116,17 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
 
     }
 
+    private void performAdminStop(String text) throws TelegramApiException {
+        String[] params = text.split(" ");
+        if (params.length == 2) {
+            performStopCommand(Long.getLong(params[1]), true);
+            sendMessage(new SendMessage()
+                    .setChatId(params[1])
+                    .setText("Работа остановлена. Для возбновления, отправьте команду /start.")
+            );
+        }
+    }
+
     private void performMessageByAdmin(String text) throws TelegramApiException {
         String[] params = text.split("&");
         if (params.length == 3) {
@@ -126,7 +140,7 @@ public class MailBot extends TelegramLongPollingBot implements MessageListener {
     private void performStopCommand(Long chatId, boolean isRestart) throws TelegramApiException {
         String message = "";
         if (serviceMap.containsKey(chatId) && serviceMap.get(chatId) != null) {
-            serviceMap.get(chatId).stop();
+            serviceMap.get(chatId).stop(false);
             serviceMap.remove(chatId);
             message = "Пересылка картинок остановлена. Для возобновления работы воспользуйтесь командой /start.";
         } else
