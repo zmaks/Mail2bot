@@ -154,9 +154,9 @@ public class MailService {
                     if (newMessageCount > messagesCount) {
                         performNewMails(inbox, messagesCount, newMessageCount);
                     }
-                    if (newMessageCount < messagesCount) {
+                    /*if (newMessageCount < messagesCount) {
                         performNewMailsWithDeleted(inbox, newMessageCount);
-                    }
+                    }*/
                     messagesCount = newMessageCount;
                     i++;
                     Thread.sleep(FREQUENCY);
@@ -172,13 +172,13 @@ public class MailService {
     }
 
     private void reconnect(){
-        bot.sendToTelegram("Ошибка при обновлении списка писем на почте.\nПопытаюсь переподключиться через 20 секунд...", ownerChatId);
-        Thread currentThread = mailUpdateThread;
+        bot.sendToTelegram("Ошибка при обновлении списка писем на почте.\nПопытаюсь переподключиться через 15 секунд...", ownerChatId);
+
         stop(true);
         inbox = null;
         store = null;
         try {
-            Thread.sleep(30000L);
+            Thread.sleep(15000L);
             connect();
         } catch (MessagingException | InterruptedException e) {
             LOGGER.error("\n\n\nTOTAL FAIL\n\nReconnection error!", e);

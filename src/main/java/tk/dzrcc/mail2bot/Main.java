@@ -17,11 +17,12 @@ public class Main {
         ApiContextInitializer.init();
 
         TelegramBotsApi botsApi = new TelegramBotsApi();
-
         try {
             botsApi.registerBot(new MailTeleBot());
+
         } catch (TelegramApiException e) {
             e.printStackTrace();
         }
+        System.out.println("Mail2bot activated");
     }
 }

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -23,13 +24,22 @@ import java.util.regex.Pattern;
 public class MailTeleBot extends TelegramLongPollingBot implements MessageListener {
     final static Logger LOGGER = Logger.getLogger(MailTeleBot.class);
 
-
-    private static final String START_MESSAGE = "Привет! Чтобы подключтиься к Вашей почте и приступить к работе, мне необходимы адрес почты (Яндекс.Почта или Gmail) и пароль через пробел. Например:\n\nivanov@ya.ru password123";
-    private static final String SERVICE_STARTED = "Работа уже идет полным ходом! :)";
     private static final Long ADMIN_CHAT_ID = 183375382L;
+    private static final String START_MESSAGE = "Привет! Чтобы подключтиься к Вашей почте и приступить к работе, мне необходимы адрес почты (доступна только Яндекс.Почта) и пароль через пробел. Например:\n\nivanov@ya.ru password123";
+    private static final String SERVICE_STARTED = "Работа уже идет полным ходом! :)";
+    private static final String SHUTDOWN_MESSAGE = "К сожалению, я вынужден остановить работу. Это связано с неполадками на сервере. Отправьте команду /start сейчас и как только все наладится, я Вам отвечу. \n\nДля ускорения возобновления работы, напишите разработчику: @z_maks";
+    private static final String STOPPED_BY_ADMIN = "Работа остановлена администратором.";
+    private static final String STOP_MESSAGE = "Пересылка картинок остановлена. Для возобновления работы воспользуйтесь командой /start.";
+    private static final String ALREADY_STARTED = "Сервис еще не запущен, останавливать нечего. Воспользуйтесь командой /start :)";
+    private static final String CONNECTING = "Подключаюсь...";
+    private static final String AUTH_FAILED = "Не удалось подключиться.\nПроверьте корректность адреса и пароля и отправьте их заново.";
+    private static final String CONNECTION_SUCCESS = "Готово! Теперь все фотографии, приходящие на Вашу почты будут пересылаться в этот диалог.\nЧтобы остановить процесс, отправьте команду /stop.";
+
+    private static final String USER_CONNECTED = "Подключился пользователь ";
+    private static final String INCORRECT_PARAMS = "Адрес почты и пароль введены неправильно. Пришлите, пожалуйста, правильныные адрес почты и пароль через пробел. Например:\n\n ivanov@ya.ru password123";
     private Map<Long, MailService> serviceMap = new HashMap<Long, MailService>();
 
-    private Pattern mailParamsPattern = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\s.{2,}$");
+    private Pattern mailParamsPattern = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\s.{2,}");
 
     public MailTeleBot(){
         super();
@@ -39,7 +49,7 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
                     try {
                         sendMessage(new SendMessage()
                                 .setChatId(chatId)
-                                .setText("К сожалению, я вынужден остановить работу. Это связано с неполадками на сервере. Отправьте команду /start сейчас и как только все наладится, я Вам отвечу. \n\nДля ускорения возобновления работы, напишите разработчику: @z_maks")
+                                .setText(SHUTDOWN_MESSAGE)
                         );
                         LOGGER.info("Shutdown hook message sent");
                     } catch (TelegramApiException e) {
@@ -80,36 +90,39 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
             stringBuilder.append(user.getUserName());
             stringBuilder.append(" ");
         }
-        stringBuilder.append("\nid: ");
+        stringBuilder.append("id: ");
         stringBuilder.append(chatId);
         return stringBuilder.toString();
     }
 
     private void handleMessage(Long chatId, String text, String from) throws TelegramApiException {
         if (chatId.equals(ADMIN_CHAT_ID) && text.contains(Commands.SEND)) {
+            LOGGER.info("SEND command");
             performMessageByAdmin(text);
         }
         if (chatId.equals(ADMIN_CHAT_ID) && text.contains(Commands.ADMIN_STOP)) {
+            LOGGER.info("ADMIN STOP command");
             performAdminStop(text);
         }
         if(text.equals(Commands.START)){
+            LOGGER.info("START command ["+chatId+"]");
             performStartCommand(chatId);
             //System.out.println("START");
-            LOGGER.info("START command ["+chatId+"]");
             return;
         }
         if (text.equals(Commands.RESTART)) {
+            LOGGER.info("RESTART command ["+chatId+"]");
             performStopCommand(chatId, true);
             performStartCommand(chatId);
-            LOGGER.info("RESTART command ["+chatId+"]");
             return;
         }
         if (text.equals(Commands.STOP)){
-            performStopCommand(chatId, false);
             LOGGER.info("STOP command ["+chatId+"]");
+            performStopCommand(chatId, false);
             return;
         }
         if (serviceMap.containsKey(chatId) && serviceMap.get(chatId) == null) {
+            LOGGER.info("CONNECTION command ["+chatId+"]");
             performConnection(chatId, text, from);
             return;
         }
@@ -119,11 +132,13 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
     private void performAdminStop(String text) throws TelegramApiException {
         String[] params = text.split(" ");
         if (params.length == 2) {
-            performStopCommand(Long.getLong(params[1]), true);
+            performStopCommand(Long.parseLong(params[1]), true);
             sendMessage(new SendMessage()
                     .setChatId(params[1])
-                    .setText("Работа остановлена. Для возбновления, отправьте команду /start.")
+                    .setText(STOPPED_BY_ADMIN)
             );
+            sendToAdmin("Работа пользователя " + params[1] + " остановлена.");
+            LOGGER.info(params[1] + " stopped by admin");
         }
     }
 
@@ -142,9 +157,9 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
         if (serviceMap.containsKey(chatId) && serviceMap.get(chatId) != null) {
             serviceMap.get(chatId).stop(false);
             serviceMap.remove(chatId);
-            message = "Пересылка картинок остановлена. Для возобновления работы воспользуйтесь командой /start.";
+            message = STOP_MESSAGE;
         } else
-            message = "Сервис еще не запущен, останавливать нечего. Воспользуйтесь командой /start :)";
+            message = ALREADY_STARTED;
         if (!isRestart) {
             sendMessage(new SendMessage()
                     .setChatId(chatId)
@@ -171,11 +186,13 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
 
     private void performConnection(Long chatId, String text, String from) throws TelegramApiException {
         String message = "";
-        String[] parts = text.split(" ");
-        if (mailParamsPattern.matcher(text).find() && parts.length == 2) {
+        Matcher matcher = mailParamsPattern.matcher(text);
+        if (matcher.find()) {
+
+            String[] parts = matcher.group().split(" ");
             sendMessage(new SendMessage()
                             .setChatId(chatId)
-                            .setText("Подключаюсь...")
+                            .setText(CONNECTING)
             );
             LOGGER.info("Performing connection to " + parts[0]);
 
@@ -185,16 +202,16 @@ public class MailTeleBot extends TelegramLongPollingBot implements MessageListen
                 e.printStackTrace();
                 sendMessage(new SendMessage()
                         .setChatId(chatId)
-                        .setText("Не удалось подключиться.\nПроверьте корректность адреса и пароля и отправьте их заново.")
+                        .setText(AUTH_FAILED)
                 );
                 LOGGER.error("CONNECTION ERROR in ["+chatId+"]", e);
                 return;
             }
-            message = "Готово! Теперь все фотографии, приходящие на Вашу почты будут пересылаться в этот диалог.\nЧтобы остановить процесс, отправьте команду /stop.";
-            sendToAdmin("Подключился пользователь " + from);
+            message = CONNECTION_SUCCESS;
+            sendToAdmin(USER_CONNECTED + from);
             LOGGER.info("Connection is success!");
         } else {
-            message = "Адрес почты и пароль введены неправильно. Пришлите, пожалуйста, правильныные адрес почты и пароль через пробел. Например:\n\n ivanov@ya.ru password123";
+            message = INCORRECT_PARAMS;
             LOGGER.info("Wrong connection params by ["+chatId+"]");
         }
         sendMessage(new SendMessage()
